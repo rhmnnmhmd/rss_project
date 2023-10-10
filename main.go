@@ -1,21 +1,41 @@
 package main
 
 import (
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
+	"rhmnnmhmd/rss_project/internal/database"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/cors"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 )
 
 func main() {
 	godotenv.Load()
+	
 	portString := os.Getenv("PORT")
 
 	if portString == "" {
 		log.Fatal("PORT is not found in the environment")
+	}
+
+	dbUrl := os.Getenv("DB_URL")
+
+	if dbUrl == "" {
+		log.Fatal("DB_URL is not found in the environment")
+	}
+
+	connection, err := sql.Open("postgres", dbUrl)
+
+	if err != nil {
+		log.Fatalf("Error opening database connection: %s", err)
+	}
+
+	apiConfig := apiConfig{
+		DB: database.New(connection),
 	}
 
 	router := chi.NewRouter()
@@ -34,6 +54,11 @@ func main() {
 	v1Router := chi.NewRouter()
 	v1Router.Get("/healthz", handlerReadiness)
 	v1Router.Get("/err", handlerErr)
+	v1Router.Post("/users", apiConfig.handlerCreateUser)
+	v1Router.Get("/users", apiConfig.middlewareAuth(apiConfig.handlerGetUser))
+	v1Router.Post("/feeds", apiConfig.middlewareAuth(apiConfig.handlerCreateFeed))
+	v1Router.Get("/feeds",apiConfig.handlerGetFeeds)
+	v1Router.Post("/feed_follows", apiConfig.middlewareAuth(apiConfig.handlerCreateFeedFollow))
 
 	router.Mount("/v1", v1Router)
 
@@ -43,9 +68,13 @@ func main() {
 	}
 
 	log.Printf("Server started on port %s", portString)
-	err := server.ListenAndServe()
+	err = server.ListenAndServe()
 
 	if err != nil {
 		log.Fatalf("Error starting server: %s", err)
 	}
+}
+
+type apiConfig struct {
+	DB *database.Queries
 }
